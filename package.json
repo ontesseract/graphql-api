@@ -1,0 +1,32 @@
+{
+  "name": "@ontesseract/graphql-api",
+  "version": "1.0.0",
+  "description": "",
+  "type": "commonjs",
+  "exports": {
+    ".": {
+      "require": "./dist/index.js",
+      "import": "./dist/index.js"
+    }
+  },
+  "main": "dist/index",
+  "scripts": {
+    "build": "rm -rf ./dist && tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@graphql-codegen/plugin-helpers": "^5.1.1",
+    "case": "^1.6.3",
+    "prettier": "^3.6.2"
+  },
+  "peerDependencies": {
+    "graphql": "^14.0.0 || ^15.0.0 || ^16.0.0 || ^17.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.2.1",
+    "graphql": "^16.11.0",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    // must be a CommonJS module for
+    // compatibility with graphql-codegen
+    "module": "CommonJS",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "src": ["./src"]
+    }
+  },
+  "include": ["src"]
+}
