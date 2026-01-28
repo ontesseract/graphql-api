@@ -26,12 +26,13 @@ function generateRequestArguments(
   pascalCaseName: string,
   nameSuffix: string
 ): string {
-  return `${pascalCaseName}${nameSuffix}, variables`;
+  return `${pascalCaseName}${nameSuffix}, variables, options`;
 }
 
 function generateQueryFunction(
   definition: OperationDefinitionNode,
-  nameSuffix: string
+  nameSuffix: string = "",
+  withWrapper: boolean = true
 ): string {
   const name = definition.name?.value;
   if (!name) {
@@ -39,20 +40,23 @@ function generateQueryFunction(
   }
   const pascalCaseName = Case.pascal(name);
   const returnMatchesName = returnFieldMatchesOperationName(definition);
+  const functionName = withWrapper ? name : `function fetch${pascalCaseName}`;
+  const clientArg = withWrapper ? "" : `client: GenericGraphQLClient, `;
   if (returnMatchesName) {
-    return `async ${name}(variables: ${pascalCaseName}QueryVariables): Promise<${pascalCaseName}Query['${name}']> {
+    return `async ${functionName}(${clientArg}variables: ${pascalCaseName}QueryVariables, options?: RequestOptions): Promise<${pascalCaseName}Query['${name}']> {
       const data = await client.request<${pascalCaseName}Query>(${generateRequestArguments(pascalCaseName, nameSuffix)})
       return data['${name}']
     }`;
   }
-  return `async ${name}(variables: ${pascalCaseName}QueryVariables): Promise<${pascalCaseName}Query> {
+  return `async ${functionName}(${clientArg}variables: ${pascalCaseName}QueryVariables, options?: RequestOptions): Promise<${pascalCaseName}Query> {
     return client.request<${pascalCaseName}Query>(${generateRequestArguments(pascalCaseName, nameSuffix)})
   }`;
 }
 
 function generateMutationFunction(
   definition: OperationDefinitionNode,
-  nameSuffix: string
+  nameSuffix: string = "",
+  withWrapper: boolean = true
 ): string {
   const name = definition.name?.value;
   if (!name) {
@@ -60,13 +64,15 @@ function generateMutationFunction(
   }
   const pascalCaseName = Case.pascal(name);
   const returnMatchesName = returnFieldMatchesOperationName(definition);
+  const functionName = withWrapper ? name : `function ${name}`;
+  const clientArg = withWrapper ? "" : `client: GenericGraphQLClient, `;
   if (returnMatchesName) {
-    return `async ${name}(variables: ${pascalCaseName}MutationVariables): Promise<${pascalCaseName}Mutation['${name}']> {
+    return `async ${functionName}(${clientArg}variables: ${pascalCaseName}MutationVariables, options?: RequestOptions): Promise<${pascalCaseName}Mutation['${name}']> {
       const data = await client.request<${pascalCaseName}Mutation>(${generateRequestArguments(pascalCaseName, nameSuffix)})
       return data['${name}']
     }`;
   }
-  return `async ${name}(variables: ${pascalCaseName}MutationVariables): Promise<${pascalCaseName}Mutation> {
+  return `async ${functionName}(${clientArg}variables: ${pascalCaseName}MutationVariables, options?: RequestOptions): Promise<${pascalCaseName}Mutation> {
     return client.request<${pascalCaseName}Mutation>(${generateRequestArguments(pascalCaseName, nameSuffix)})
   }`;
 }
@@ -74,7 +80,7 @@ function generateMutationFunction(
 export async function plugin(
   schema: GraphQLSchema,
   documents: Types.DocumentFile[],
-  options: { nameSuffix?: string } = {}
+  options: { nameSuffix?: string; withWrapper?: boolean } = {}
 ): Promise<Types.ComplexPluginOutput> {
   const functions: string[] = [];
 
@@ -86,33 +92,65 @@ export async function plugin(
       if (definition.kind === Kind.OPERATION_DEFINITION) {
         if (definition.operation === "query") {
           functions.push(
-            generateQueryFunction(definition, options.nameSuffix ?? "")
+            generateQueryFunction(
+              definition,
+              options.nameSuffix,
+              options.withWrapper
+            )
           );
         }
         if (definition.operation === "mutation") {
           functions.push(
-            generateMutationFunction(definition, options.nameSuffix ?? "")
+            generateMutationFunction(
+              definition,
+              options.nameSuffix,
+              options.withWrapper
+            )
           );
         }
       }
     }
   }
 
-  let content = `
-  export type GenericGraphQLClient<C = {}> = {
+  const genericGraphQLClient = `
+
+  export type RequestOptions = {
+    requestHeaders?: HeadersInit;
+    signal?: RequestInit['signal'];
+  };
+
+  export type GenericGraphQLClient = {
     request<TData = any, V = any>(
       document: string | DocumentNode | TypedDocumentNode<TData, V>,
       variables?: V,
-      options?: C
+      options?: RequestOptions
     ): Promise<TData>;
+    subscribeAsync<TData = any, V = any>(
+      document: string | DocumentNode | TypedDocumentNode<TData, V>,
+      variables?: V,
+      onUnexpectedClose?: () => void
+    ): AsyncIterable<TData>;
   };
+  `;
 
-  export function getAPI(client: GenericGraphQLClient) {
-    return {
-      ${functions.join(",\n")}
+  let content = "";
+
+  if (options.withWrapper) {
+    content = `
+    ${genericGraphQLClient}
+  
+    export function getAPI(client: GenericGraphQLClient) {
+      return {
+        ${functions.join(",\n")}
+      }
     }
+    export type GraphQLAPI = ReturnType<typeof getAPI>;`;
+  } else {
+    content = `
+    ${genericGraphQLClient}
+    ${functions.join("\n")}
+    `;
   }
-  export type GraphQLAPI = ReturnType<typeof getAPI>;`;
 
   content = await format(content, { parser: "typescript" });
 
