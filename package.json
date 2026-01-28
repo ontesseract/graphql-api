@@ -13,7 +13,8 @@
   "scripts": {
     "build": "rm -rf ./dist && tsc",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "run-test": "bun src/__tests__/run-test.ts"
   },
   "dependencies": {
     "@graphql-codegen/plugin-helpers": "^5.1.1",

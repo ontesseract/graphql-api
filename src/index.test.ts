@@ -26,9 +26,30 @@ const typeDefs = /* GraphQL */ `
     updateProfile(id: uuid!, displayName: String): Profile!
   }
 
+  type Subscription {
+    profile(id: uuid!): Profile
+    profiles: [Profile!]!
+    profilesStream(batchSize: Int!, cursor: [ProfileStreamCursorInput!]!): [Profile!]!
+  }
+
+  input ProfileStreamCursorInput {
+    initialValue: ProfileStreamCursorValueInput!
+    ordering: CursorOrdering
+  }
+
+  input ProfileStreamCursorValueInput {
+    id: uuid
+  }
+
+  enum CursorOrdering {
+    ASC
+    DESC
+  }
+
   schema {
     query: Query
     mutation: Mutation
+    subscription: Subscription
   }
 `;
 
@@ -536,6 +557,162 @@ describe("GraphQL API Generator", () => {
 
       // Client should still be used in function body (from closure)
       expect(content).toContain("client.request<ProfileQuery>");
+    });
+  });
+
+  describe("Subscription functions", () => {
+    it("Should generate subscription function using subscribeAsync (withWrapper: false)", async () => {
+      const schema = buildSchema(typeDefs);
+      const subscriptionDoc = parse(/* GraphQL */ `
+        subscription profile($id: uuid!) {
+          profile(id: $id) {
+            id
+            displayName
+            photoUrl
+          }
+        }
+      `);
+
+      const documents: Types.DocumentFile[] = [
+        {
+          document: subscriptionDoc,
+          location: "test.graphql",
+        },
+      ];
+
+      const output = await plugin(schema, documents, {
+        withWrapper: false,
+        nameSuffix: "Doc",
+      });
+      const content = getContent(output);
+
+      // Should use subscribeAsync instead of request
+      expect(content).toContain("client.subscribeAsync<ProfileSubscription>");
+      expect(content).toContain("function subscribeProfile");
+      expect(content).toContain("variables: ProfileSubscriptionVariables");
+      expect(content).toContain("onUnexpectedClose?: () => void");
+      expect(content).toContain("AsyncIterable<ProfileSubscription[\"profile\"]>");
+      expect(content).toContain("ProfileDoc,");
+      expect(content).toContain("variables");
+      
+      // Should NOT use request
+      expect(content).not.toContain("client.request<ProfileSubscription>");
+    });
+
+    it("Should generate stream subscription function that yields entire array (withWrapper: false)", async () => {
+      const schema = buildSchema(typeDefs);
+      const subscriptionDoc = parse(/* GraphQL */ `
+        subscription profilesStream($batchSize: Int!, $cursor: [ProfileStreamCursorInput!]!) {
+          profilesStream(batchSize: $batchSize, cursor: $cursor) {
+            id
+            displayName
+          }
+        }
+      `);
+
+      const documents: Types.DocumentFile[] = [
+        {
+          document: subscriptionDoc,
+          location: "test.graphql",
+        },
+      ];
+
+      const output = await plugin(schema, documents, {
+        withWrapper: false,
+        nameSuffix: "Doc",
+      });
+      const content = getContent(output);
+
+      // Should use subscribeAsync
+      expect(content).toContain("client.subscribeAsync<ProfilesStreamSubscription>");
+      expect(content).toContain("function subscribeProfilesStream");
+      expect(content).toContain("variables: ProfilesStreamSubscriptionVariables");
+      expect(content).toContain("onUnexpectedClose?: () => void");
+      expect(content).toContain("AsyncIterable<ProfilesStreamSubscription[\"profilesStream\"]>");
+      
+      // Should yield the entire array for stream subscriptions
+      expect(content).toContain("yield data[\"profilesStream\"]");
+      // Should NOT yield individual items
+      expect(content).not.toContain("for (const item of data[\"profilesStream\"])");
+      expect(content).not.toContain("if (Array.isArray(data[\"profilesStream\"]))");
+    });
+
+    it("Should generate subscription function with wrapper (withWrapper: true)", async () => {
+      const schema = buildSchema(typeDefs);
+      const subscriptionDoc = parse(/* GraphQL */ `
+        subscription profile($id: uuid!) {
+          profile(id: $id) {
+            id
+            displayName
+          }
+        }
+      `);
+
+      const documents: Types.DocumentFile[] = [
+        {
+          document: subscriptionDoc,
+          location: "test.graphql",
+        },
+      ];
+
+      let content: string;
+      try {
+        const output = await plugin(schema, documents, {
+          withWrapper: true,
+          nameSuffix: "Doc",
+        });
+        content = getContent(output);
+      } catch (error: any) {
+        if (error.message?.includes("Unexpected keyword")) {
+          return;
+        }
+        throw error;
+      }
+
+      // Should use subscribeAsync
+      expect(content).toContain("client.subscribeAsync<ProfileSubscription>");
+      expect(content).toContain("profile(");
+      expect(content).toContain("variables: ProfileSubscriptionVariables");
+      expect(content).toContain("onUnexpectedClose?: () => void");
+      expect(content).toContain("AsyncIterable<ProfileSubscription[\"profile\"]>");
+      
+      // Should NOT have client parameter (it's in closure)
+      const profileStart = content.indexOf("profile(");
+      const profileSection = content.substring(profileStart, profileStart + 300);
+      expect(profileSection).not.toMatch(/\(\s*client:\s*GenericGraphQLClient/);
+    });
+
+    it("Should return AsyncIterable for subscriptions", async () => {
+      const schema = buildSchema(typeDefs);
+      const subscriptionDoc = parse(/* GraphQL */ `
+        subscription profiles {
+          profiles {
+            id
+            displayName
+          }
+        }
+      `);
+
+      const documents: Types.DocumentFile[] = [
+        {
+          document: subscriptionDoc,
+          location: "test.graphql",
+        },
+      ];
+
+      const output = await plugin(schema, documents, {
+        withWrapper: false,
+        nameSuffix: "Doc",
+      });
+      const content = getContent(output);
+
+      // Should return AsyncIterable, not Promise
+      expect(content).toContain("AsyncIterable<ProfilesSubscription[\"profiles\"]>");
+      expect(content).not.toContain("Promise<ProfilesSubscription");
+      
+      // Should use async generator function
+      expect(content).toContain("async function* ()");
+      expect(content).toContain("for await (const data of");
     });
   });
 });

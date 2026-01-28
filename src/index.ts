@@ -77,11 +77,65 @@ function generateMutationFunction(
   }`;
 }
 
+function generateSubscribeArguments(
+  pascalCaseName: string,
+  nameSuffix: string
+): string {
+  return `${pascalCaseName}${nameSuffix}, variables`;
+}
+
+function generateSubscriptionFunction(
+  definition: OperationDefinitionNode,
+  nameSuffix: string = "",
+  withWrapper: boolean = true
+): string {
+  const name = definition.name?.value;
+  if (!name) {
+    return "";
+  }
+  const pascalCaseName = Case.pascal(name);
+  const returnMatchesName = returnFieldMatchesOperationName(definition);
+  const functionName = withWrapper
+    ? name
+    : `function subscribe${pascalCaseName}`;
+  const clientArg = withWrapper ? "" : `client: GenericGraphQLClient, `;
+  const isStream = name.endsWith("Stream");
+
+  // For stream subscriptions, always yield the entire array
+  if (isStream) {
+    return `${functionName}(${clientArg}variables: ${pascalCaseName}SubscriptionVariables, onUnexpectedClose?: () => void): AsyncIterable<${pascalCaseName}Subscription['${name}']> {
+      return (async function* () {
+        for await (const data of client.subscribeAsync<${pascalCaseName}Subscription>(${generateSubscribeArguments(pascalCaseName, nameSuffix)}, onUnexpectedClose)) {
+          yield data['${name}'];
+        }
+      })();
+    }`;
+  }
+
+  // For regular subscriptions, check if return matches name
+  if (returnMatchesName) {
+    // Regular subscription - yield the field value
+    return `${functionName}(${clientArg}variables: ${pascalCaseName}SubscriptionVariables, onUnexpectedClose?: () => void): AsyncIterable<${pascalCaseName}Subscription['${name}']> {
+      return (async function* () {
+        for await (const data of client.subscribeAsync<${pascalCaseName}Subscription>(${generateSubscribeArguments(pascalCaseName, nameSuffix)}, onUnexpectedClose)) {
+          yield data['${name}'];
+        }
+      })();
+    }`;
+  }
+
+  // If return doesn't match name, yield the entire subscription result
+  return `${functionName}(${clientArg}variables: ${pascalCaseName}SubscriptionVariables, onUnexpectedClose?: () => void): AsyncIterable<${pascalCaseName}Subscription> {
+    return client.subscribeAsync<${pascalCaseName}Subscription>(${generateSubscribeArguments(pascalCaseName, nameSuffix)}, onUnexpectedClose);
+  }`;
+}
+
 export async function plugin(
   schema: GraphQLSchema,
   documents: Types.DocumentFile[],
   options: { nameSuffix?: string; withWrapper?: boolean } = {}
 ): Promise<Types.ComplexPluginOutput> {
+  const withWrapper = options.withWrapper ?? true;
   const functions: string[] = [];
 
   for (const doc of documents) {
@@ -92,11 +146,7 @@ export async function plugin(
       if (definition.kind === Kind.OPERATION_DEFINITION) {
         if (definition.operation === "query") {
           functions.push(
-            generateQueryFunction(
-              definition,
-              options.nameSuffix,
-              options.withWrapper
-            )
+            generateQueryFunction(definition, options.nameSuffix, withWrapper)
           );
         }
         if (definition.operation === "mutation") {
@@ -104,7 +154,16 @@ export async function plugin(
             generateMutationFunction(
               definition,
               options.nameSuffix,
-              options.withWrapper
+              withWrapper
+            )
+          );
+        }
+        if (definition.operation === "subscription") {
+          functions.push(
+            generateSubscriptionFunction(
+              definition,
+              options.nameSuffix,
+              withWrapper
             )
           );
         }
@@ -135,20 +194,21 @@ export async function plugin(
 
   let content = "";
 
-  if (options.withWrapper) {
+  const validFunctions = functions.filter(Boolean);
+  if (withWrapper) {
     content = `
     ${genericGraphQLClient}
-  
+
     export function getAPI(client: GenericGraphQLClient) {
       return {
-        ${functions.join(",\n")}
+        ${validFunctions.join(",\n")}
       }
-    }
+    };
     export type GraphQLAPI = ReturnType<typeof getAPI>;`;
   } else {
     content = `
     ${genericGraphQLClient}
-    ${functions.join("\n")}
+    ${validFunctions.join(";\n")}
     `;
   }
 

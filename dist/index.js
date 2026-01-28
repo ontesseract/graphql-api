@@ -58,42 +58,81 @@ function returnFieldMatchesOperationName(definition) {
     return false;
 }
 function generateRequestArguments(pascalCaseName, nameSuffix) {
+    return "".concat(pascalCaseName).concat(nameSuffix, ", variables, options");
+}
+function generateQueryFunction(definition, nameSuffix, withWrapper) {
+    var _a;
+    if (nameSuffix === void 0) { nameSuffix = ""; }
+    if (withWrapper === void 0) { withWrapper = true; }
+    var name = (_a = definition.name) === null || _a === void 0 ? void 0 : _a.value;
+    if (!name) {
+        return "";
+    }
+    var pascalCaseName = case_1.default.pascal(name);
+    var returnMatchesName = returnFieldMatchesOperationName(definition);
+    var functionName = withWrapper ? name : "function fetch".concat(pascalCaseName);
+    var clientArg = withWrapper ? "" : "client: GenericGraphQLClient, ";
+    if (returnMatchesName) {
+        return "async ".concat(functionName, "(").concat(clientArg, "variables: ").concat(pascalCaseName, "QueryVariables, options?: RequestOptions): Promise<").concat(pascalCaseName, "Query['").concat(name, "']> {\n      const data = await client.request<").concat(pascalCaseName, "Query>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n      return data['").concat(name, "']\n    }");
+    }
+    return "async ".concat(functionName, "(").concat(clientArg, "variables: ").concat(pascalCaseName, "QueryVariables, options?: RequestOptions): Promise<").concat(pascalCaseName, "Query> {\n    return client.request<").concat(pascalCaseName, "Query>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n  }");
+}
+function generateMutationFunction(definition, nameSuffix, withWrapper) {
+    var _a;
+    if (nameSuffix === void 0) { nameSuffix = ""; }
+    if (withWrapper === void 0) { withWrapper = true; }
+    var name = (_a = definition.name) === null || _a === void 0 ? void 0 : _a.value;
+    if (!name) {
+        return "";
+    }
+    var pascalCaseName = case_1.default.pascal(name);
+    var returnMatchesName = returnFieldMatchesOperationName(definition);
+    var functionName = withWrapper ? name : "function ".concat(name);
+    var clientArg = withWrapper ? "" : "client: GenericGraphQLClient, ";
+    if (returnMatchesName) {
+        return "async ".concat(functionName, "(").concat(clientArg, "variables: ").concat(pascalCaseName, "MutationVariables, options?: RequestOptions): Promise<").concat(pascalCaseName, "Mutation['").concat(name, "']> {\n      const data = await client.request<").concat(pascalCaseName, "Mutation>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n      return data['").concat(name, "']\n    }");
+    }
+    return "async ".concat(functionName, "(").concat(clientArg, "variables: ").concat(pascalCaseName, "MutationVariables, options?: RequestOptions): Promise<").concat(pascalCaseName, "Mutation> {\n    return client.request<").concat(pascalCaseName, "Mutation>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n  }");
+}
+function generateSubscribeArguments(pascalCaseName, nameSuffix) {
     return "".concat(pascalCaseName).concat(nameSuffix, ", variables");
 }
-function generateQueryFunction(definition, nameSuffix) {
+function generateSubscriptionFunction(definition, nameSuffix, withWrapper) {
     var _a;
+    if (nameSuffix === void 0) { nameSuffix = ""; }
+    if (withWrapper === void 0) { withWrapper = true; }
     var name = (_a = definition.name) === null || _a === void 0 ? void 0 : _a.value;
     if (!name) {
         return "";
     }
     var pascalCaseName = case_1.default.pascal(name);
     var returnMatchesName = returnFieldMatchesOperationName(definition);
+    var functionName = withWrapper
+        ? name
+        : "function subscribe".concat(pascalCaseName);
+    var clientArg = withWrapper ? "" : "client: GenericGraphQLClient, ";
+    var isStream = name.endsWith("Stream");
+    // For stream subscriptions, always yield the entire array
+    if (isStream) {
+        return "".concat(functionName, "(").concat(clientArg, "variables: ").concat(pascalCaseName, "SubscriptionVariables, onUnexpectedClose?: () => void): AsyncIterable<").concat(pascalCaseName, "Subscription['").concat(name, "']> {\n      return (async function* () {\n        for await (const data of client.subscribeAsync<").concat(pascalCaseName, "Subscription>(").concat(generateSubscribeArguments(pascalCaseName, nameSuffix), ", onUnexpectedClose)) {\n          yield data['").concat(name, "'];\n        }\n      })();\n    }");
+    }
+    // For regular subscriptions, check if return matches name
     if (returnMatchesName) {
-        return "async ".concat(name, "(variables: ").concat(pascalCaseName, "QueryVariables): Promise<").concat(pascalCaseName, "Query['").concat(name, "']> {\n      const data = await client.request<").concat(pascalCaseName, "Query>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n      return data['").concat(name, "']\n    }");
+        // Regular subscription - yield the field value
+        return "".concat(functionName, "(").concat(clientArg, "variables: ").concat(pascalCaseName, "SubscriptionVariables, onUnexpectedClose?: () => void): AsyncIterable<").concat(pascalCaseName, "Subscription['").concat(name, "']> {\n      return (async function* () {\n        for await (const data of client.subscribeAsync<").concat(pascalCaseName, "Subscription>(").concat(generateSubscribeArguments(pascalCaseName, nameSuffix), ", onUnexpectedClose)) {\n          yield data['").concat(name, "'];\n        }\n      })();\n    }");
     }
-    return "async ".concat(name, "(variables: ").concat(pascalCaseName, "QueryVariables): Promise<").concat(pascalCaseName, "Query> {\n    return client.request<").concat(pascalCaseName, "Query>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n  }");
-}
-function generateMutationFunction(definition, nameSuffix) {
-    var _a;
-    var name = (_a = definition.name) === null || _a === void 0 ? void 0 : _a.value;
-    if (!name) {
-        return "";
-    }
-    var pascalCaseName = case_1.default.pascal(name);
-    var returnMatchesName = returnFieldMatchesOperationName(definition);
-    if (returnMatchesName) {
-        return "async ".concat(name, "(variables: ").concat(pascalCaseName, "MutationVariables): Promise<").concat(pascalCaseName, "Mutation['").concat(name, "']> {\n      const data = await client.request<").concat(pascalCaseName, "Mutation>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n      return data['").concat(name, "']\n    }");
-    }
-    return "async ".concat(name, "(variables: ").concat(pascalCaseName, "MutationVariables): Promise<").concat(pascalCaseName, "Mutation> {\n    return client.request<").concat(pascalCaseName, "Mutation>(").concat(generateRequestArguments(pascalCaseName, nameSuffix), ")\n  }");
+    // If return doesn't match name, yield the entire subscription result
+    return "".concat(functionName, "(").concat(clientArg, "variables: ").concat(pascalCaseName, "SubscriptionVariables, onUnexpectedClose?: () => void): AsyncIterable<").concat(pascalCaseName, "Subscription> {\n    return client.subscribeAsync<").concat(pascalCaseName, "Subscription>(").concat(generateSubscribeArguments(pascalCaseName, nameSuffix), ", onUnexpectedClose);\n  }");
 }
 function plugin(schema_1, documents_1) {
     return __awaiter(this, arguments, void 0, function (schema, documents, options) {
-        var functions, _i, documents_2, doc, _a, _b, definition, content;
-        var _c, _d;
+        var withWrapper, functions, _i, documents_2, doc, _a, _b, definition, genericGraphQLClient, content, validFunctions;
+        var _c;
         if (options === void 0) { options = {}; }
-        return __generator(this, function (_e) {
-            switch (_e.label) {
+        return __generator(this, function (_d) {
+            switch (_d.label) {
                 case 0:
+                    withWrapper = (_c = options.withWrapper) !== null && _c !== void 0 ? _c : true;
                     functions = [];
                     for (_i = 0, documents_2 = documents; _i < documents_2.length; _i++) {
                         doc = documents_2[_i];
@@ -104,18 +143,29 @@ function plugin(schema_1, documents_1) {
                             definition = _b[_a];
                             if (definition.kind === graphql_1.Kind.OPERATION_DEFINITION) {
                                 if (definition.operation === "query") {
-                                    functions.push(generateQueryFunction(definition, (_c = options.nameSuffix) !== null && _c !== void 0 ? _c : ""));
+                                    functions.push(generateQueryFunction(definition, options.nameSuffix, withWrapper));
                                 }
                                 if (definition.operation === "mutation") {
-                                    functions.push(generateMutationFunction(definition, (_d = options.nameSuffix) !== null && _d !== void 0 ? _d : ""));
+                                    functions.push(generateMutationFunction(definition, options.nameSuffix, withWrapper));
+                                }
+                                if (definition.operation === "subscription") {
+                                    functions.push(generateSubscriptionFunction(definition, options.nameSuffix, withWrapper));
                                 }
                             }
                         }
                     }
-                    content = "\n  export type GenericGraphQLClient<C = {}> = {\n    request<TData = any, V = any>(\n      document: string | DocumentNode | TypedDocumentNode<TData, V>,\n      variables?: V,\n      options?: C\n    ): Promise<TData>;\n  };\n\n  export function getAPI(client: GenericGraphQLClient) {\n    return {\n      ".concat(functions.join(",\n"), "\n    }\n  }\n  export type GraphQLAPI = ReturnType<typeof getAPI>;");
+                    genericGraphQLClient = "\n\n  export type RequestOptions = {\n    requestHeaders?: HeadersInit;\n    signal?: RequestInit['signal'];\n  };\n\n  export type GenericGraphQLClient = {\n    request<TData = any, V = any>(\n      document: string | DocumentNode | TypedDocumentNode<TData, V>,\n      variables?: V,\n      options?: RequestOptions\n    ): Promise<TData>;\n    subscribeAsync<TData = any, V = any>(\n      document: string | DocumentNode | TypedDocumentNode<TData, V>,\n      variables?: V,\n      onUnexpectedClose?: () => void\n    ): AsyncIterable<TData>;\n  };\n  ";
+                    content = "";
+                    validFunctions = functions.filter(Boolean);
+                    if (withWrapper) {
+                        content = "\n    ".concat(genericGraphQLClient, "\n\n    export function getAPI(client: GenericGraphQLClient) {\n      return {\n        ").concat(validFunctions.join(",\n"), "\n      }\n    };\n    export type GraphQLAPI = ReturnType<typeof getAPI>;");
+                    }
+                    else {
+                        content = "\n    ".concat(genericGraphQLClient, "\n    ").concat(validFunctions.join(";\n"), "\n    ");
+                    }
                     return [4 /*yield*/, (0, prettier_1.format)(content, { parser: "typescript" })];
                 case 1:
-                    content = _e.sent();
+                    content = _d.sent();
                     return [2 /*return*/, { content: content, prepend: [prepend] }];
             }
         });

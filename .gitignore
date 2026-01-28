@@ -3,3 +3,5 @@
 node_modules
 # dist # we will add this back when we publish to npm
 coverage
+
+src/__tests__/test-output.ts
